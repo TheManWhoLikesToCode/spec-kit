@@ -180,7 +180,7 @@ build_variant() {
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
       generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
-      [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
+      [[ -f templates/commands/qwen.md ]] && cp templates/commands/qwen.md "$base_dir/QWEN.md" ;;
     opencode)
       mkdir -p "$base_dir/.opencode/command"
       generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" ;;
@@ -211,13 +211,17 @@ build_variant() {
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
       generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
+    rovodevcli)
+      mkdir -p "$base_dir/.rovodevcli/commands"
+      generate_commands rovodevcli md "\$ARGUMENTS" "$base_dir/.rovodevcli/commands" "$script"
+      [[ -f agent_templates/rovodevcli/rovodevcli.md ]] && cp agent_templates/rovodevcli/rovodevcli.md "$base_dir/rovodevcli.md" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q rovodevcli)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
