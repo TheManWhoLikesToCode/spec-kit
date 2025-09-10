@@ -48,6 +48,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
+| **Rovo Dev CLI**           | `.rovodev/`            | YAML     | `acli`          | Atlassian Rovo Dev CLI      |
 
 ### Step-by-Step Integration Guide
 
@@ -248,6 +249,28 @@ AGENT_CONFIG = {
 # No special cases needed - just use agent_key directly!
 ```
 
+**Special Case - Rovo Dev CLI:**
+
+Rovo Dev CLI is invoked as `acli rovodev` (where `acli` is the CLI tool and `rovodev` is a subcommand). Following our design principle:
+
+✅ **Correct approach**:
+
+```python
+AGENT_CONFIG = {
+    "acli": {  # The actual executable name users install
+        "name": "Rovo Dev CLI",  # Brand-compliant display name
+        "folder": ".rovodev/",  # Directory matches the subcommand
+        # ...
+    }
+}
+```
+
+This way:
+- The key `acli` matches what `shutil.which()` will find in PATH
+- The display name "Rovo Dev CLI" preserves branding
+- The folder `.rovodev/` follows their documentation conventions
+- No special-case mappings needed anywhere in the codebase
+
 **Benefits of this approach:**
 
 - Eliminates special-case logic scattered throughout the codebase
@@ -316,6 +339,7 @@ Require a command-line tool to be installed:
 - **Qoder CLI**: `qoder` CLI
 - **Amp**: `amp` CLI
 - **SHAI**: `shai` CLI
+- **Rovo Dev CLI**: `acli` CLI (invoked as `acli rovodev`)
 
 ### IDE-Based Agents
 
@@ -364,6 +388,19 @@ Command content with {SCRIPT} and {{args}} placeholders.
 """
 ```
 
+### YAML Format (prompts.yml)
+
+Used by: Rovo Dev CLI
+
+```yaml
+prompts:
+  - name: speckit-command-name
+    description: "Command description"
+    content_file: speckit.command-name.md
+```
+
+Rovo Dev CLI uses a centralized `prompts.yml` index file that references individual Markdown files for prompt content.
+
 ## Directory Conventions
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
@@ -371,6 +408,8 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
+- **Special cases**:
+  - Rovo Dev CLI: `.rovodev/` (root directory with `prompts.yml` index file)
 
 ## Argument Patterns
 
@@ -378,6 +417,7 @@ Different agents use different argument placeholders:
 
 - **Markdown/prompt-based**: `$ARGUMENTS`
 - **TOML-based**: `{{args}}`
+- **YAML/Rovo-based**: `$ARGUMENTS` (in Markdown content files)
 - **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
 - **Agent placeholders**: `__AGENT__` (replaced with agent name)
 

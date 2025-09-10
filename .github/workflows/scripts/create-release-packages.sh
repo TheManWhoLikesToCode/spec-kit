@@ -121,6 +121,106 @@ EOF
   done
 }
 
+generate_rovodev_prompts() {
+  # Rovo Dev CLI (acli) uses a unique structure:
+  # - CLI tool: acli (invoked as: acli rovodev)
+  # - Directory: .rovodev/ (root, no subdirectories)
+  # - Format: prompts.yml index + individual .md content files
+  # - Branding: "Rovo Dev CLI" (Atlassian requirement)
+  
+  local output_dir=$1 script=$2
+  mkdir -p "$output_dir"
+  
+  # Start prompts.yml with header
+  cat > "$output_dir/prompts.yml" <<EOF
+prompts:
+EOF
+  
+  # Generate individual .md files and add entries to prompts.yml
+  local template_count=0
+  for template in templates/commands/*.md; do
+    [[ -f "$template" ]] || continue
+    ((template_count++))
+    
+    local name=$(basename "$template" .md)
+    local prompt_file="$output_dir/speckit.$name.md"
+    
+    # Normalize line endings
+    local file_content=$(tr -d '\r' < "$template")
+    
+    # Extract description from frontmatter (with validation)
+    local description=$(printf '%s\n' "$file_content" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
+    if [[ -z $description ]]; then
+      echo "Warning: Missing description in $template, using default" >&2
+      description="Spec Kit command: $name"
+    fi
+    
+    # Escape YAML-sensitive characters in description
+    description=$(printf '%s' "$description" | sed 's/"/\\"/g' | sed "s/'/\\'/g")
+    
+    # Extract script command
+    local script_command=$(printf '%s\n' "$file_content" | awk -v sv="$script" '/^[[:space:]]*'"$script"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script"':[[:space:]]*/, ""); print; exit}')
+    
+    if [[ -z $script_command ]]; then
+      echo "Warning: Missing script command for $script in $template" >&2
+      script_command="# Missing script command for $script"
+    fi
+    
+    # Extract agent_script command if present
+    local agent_script_command=$(printf '%s\n' "$file_content" | awk '
+      /^agent_scripts:$/ { in_agent_scripts=1; next }
+      in_agent_scripts && /^[[:space:]]*'"$script"':[[:space:]]*/ {
+        sub(/^[[:space:]]*'"$script"':[[:space:]]*/, "")
+        print
+        exit
+      }
+      in_agent_scripts && /^[a-zA-Z]/ { in_agent_scripts=0 }
+    ')
+    
+    # Replace {SCRIPT} placeholder
+    local body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
+    
+    # Replace {AGENT_SCRIPT} placeholder if found
+    if [[ -n $agent_script_command ]]; then
+      body=$(printf '%s\n' "$body" | sed "s|{AGENT_SCRIPT}|${agent_script_command}|g")
+    fi
+    
+    # Remove scripts: and agent_scripts: sections from frontmatter
+    body=$(printf '%s\n' "$body" | awk '
+      /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
+      in_frontmatter && /^scripts:$/ { skip_scripts=1; next }
+      in_frontmatter && /^agent_scripts:$/ { skip_scripts=1; next }
+      in_frontmatter && /^[a-zA-Z].*:/ && skip_scripts { skip_scripts=0 }
+      in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
+      { print }
+    ')
+    
+    # Apply substitutions (remove frontmatter, replace variables)
+    body=$(printf '%s\n' "$body" | awk '/^---$/{if(++n==2){skip=1;next}} skip{print}' | 
+      sed "s/{ARGS}/\$ARGUMENTS/g" | 
+      sed "s/__AGENT__/acli/g" | 
+      rewrite_paths)
+    
+    # Write markdown file
+    echo "$body" > "$prompt_file"
+    
+    # Add entry to prompts.yml
+    cat >> "$output_dir/prompts.yml" <<EOF
+  - name: speckit-$name
+    description: "$description"
+    content_file: speckit.$name.md
+EOF
+  done
+  
+  # Validate we generated at least one prompt
+  if [[ $template_count -eq 0 ]]; then
+    echo "Error: No templates found in templates/commands/*.md" >&2
+    return 1
+  fi
+  
+  echo "Generated $template_count Rovo Dev CLI prompts in $output_dir"
+}
+
 build_variant() {
   local agent=$1 script=$2
   local base_dir="$GENRELEASES_DIR/sdd-${agent}-package-${script}"
@@ -180,7 +280,7 @@ build_variant() {
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
       generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
-      [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
+      [[ -f templates/commands/qwen.md ]] && cp templates/commands/qwen.md "$base_dir/QWEN.md" ;;
     opencode)
       mkdir -p "$base_dir/.opencode/command"
       generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" ;;
@@ -217,13 +317,17 @@ build_variant() {
     bob)
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
+    acli)
+      mkdir -p "$base_dir/.rovodev"
+      generate_rovodev_prompts "$base_dir/.rovodev" "$script"
+      [[ -f agent_templates/acli/acli.md ]] && cp agent_templates/acli/acli.md "$base_dir/ACLI.md" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder acli)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
